@@ -56,6 +56,7 @@ model User {
   institute     Institute?          @relation(fields: [instituteId], references: [id])
   classTeachers ClassTeacher[]
   enrollments   StudentEnrollment[]
+  examAttempts  ExamAttempt[]
 }
 
 model Class {
@@ -69,6 +70,7 @@ model Class {
   institute   Institute          @relation(fields: [instituteId], references: [id])
   teachers    ClassTeacher[]
   enrollments StudentEnrollment[]
+  examUnlocks ClassExamUnlock[]
 }
 
 model ClassTeacher {
@@ -105,4 +107,59 @@ model Content {
   roboticsLevel Int
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
+}
+
+model Exam {
+  id            String   @id @default(uuid())
+  title         String
+  roboticsLevel Int
+  totalMarks    Int
+  passingMarks  Int
+  durationMins  Int
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  questions ExamQuestion[]
+  unlocks   ClassExamUnlock[]
+  attempts  ExamAttempt[]
+}
+
+model ExamQuestion {
+  id            String   @id @default(uuid())
+  examId        String
+  question      String
+  options       String[]
+  correctAnswer Int
+  marks         Int      @default(1)
+  createdAt     DateTime @default(now())
+
+  exam Exam @relation(fields: [examId], references: [id], onDelete: Cascade)
+}
+
+model ClassExamUnlock {
+  id          String   @id @default(uuid())
+  classId     String
+  examId      String
+  unlockedById String
+  unlockedAt  DateTime @default(now())
+
+  class  Class @relation(fields: [classId], references: [id], onDelete: Cascade)
+  exam   Exam  @relation(fields: [examId], references: [id], onDelete: Cascade)
+
+  @@unique([classId, examId])
+}
+
+model ExamAttempt {
+  id          String   @id @default(uuid())
+  examId      String
+  studentId   String
+  score       Int
+  totalMarks  Int
+  passed      Boolean
+  answers     Json
+  completedAt DateTime @default(now())
+
+  exam    Exam @relation(fields: [examId], references: [id], onDelete: Cascade)
+  student User @relation(fields: [studentId], references: [id], onDelete: Cascade)
 }
