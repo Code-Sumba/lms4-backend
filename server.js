@@ -7,7 +7,8 @@ import adminRoutes      from "./routes/admin.js";
 import teacherRoutes    from "./routes/teacher.js";
 import studentRoutes    from "./routes/student.js";
 import contentRoutes    from "./routes/content.js";
-import examRoutes      from "./routes/exams.js";
+import examRoutes         from "./routes/exams.js";
+import certificateRoutes  from "./routes/certificates.js";
 
 dotenv.config();
 
@@ -26,7 +27,8 @@ app.use("/api/admin",      adminRoutes);
 app.use("/api/teacher",    teacherRoutes);
 app.use("/api/student",    studentRoutes);
 app.use("/api/content",    contentRoutes);
-app.use("/api/exams",     examRoutes);
+app.use("/api/exams",        examRoutes);
+app.use("/api/certificates", certificateRoutes);
 
 app.get("/api/health", (_, res) => res.json({ status: "ok", ts: new Date() }));
 

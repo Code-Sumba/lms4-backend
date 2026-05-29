@@ -57,6 +57,7 @@ model User {
   classTeachers ClassTeacher[]
   enrollments   StudentEnrollment[]
   examAttempts  ExamAttempt[]
+  certificates  Certificate[]
 }
 
 model Class {
@@ -120,9 +121,10 @@ model Exam {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  questions ExamQuestion[]
-  unlocks   ClassExamUnlock[]
-  attempts  ExamAttempt[]
+  questions    ExamQuestion[]
+  unlocks      ClassExamUnlock[]
+  attempts     ExamAttempt[]
+  certificates Certificate[]
 }
 
 model ExamQuestion {
@@ -162,4 +164,20 @@ model ExamAttempt {
 
   exam    Exam @relation(fields: [examId], references: [id], onDelete: Cascade)
   student User @relation(fields: [studentId], references: [id], onDelete: Cascade)
+}
+
+model Certificate {
+  id            String   @id @default(uuid())
+  studentId     String
+  examId        String
+  examTitle     String
+  roboticsLevel Int
+  score         Int
+  totalMarks    Int
+  issuedAt      DateTime @default(now())
+
+  student User @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  exam    Exam @relation(fields: [examId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, examId])
 }

@@ -11,11 +11,13 @@ const fmtInst = (i) => ({ ...i, _id: i.id });
 
 /* ─── Stats ─── */
 router.get("/stats", async (req, res) => {
-  const [institutes, users] = await Promise.all([
+  const [institutes, users, certificates, exams] = await Promise.all([
     prisma.institute.count(),
     prisma.user.count(),
+    prisma.certificate.count(),
+    prisma.exam.count(),
   ]);
-  res.json({ institutes, users, experiments: 0, certificates: 0 });
+  res.json({ institutes, users, certificates, exams });
 });
 
 /* ─── Institutes ─── */

@@ -234,6 +234,15 @@ router.post("/student/:examId/attempt", protect, allow("student"), async (req, r
     data: { examId, studentId, score, totalMarks: exam.totalMarks, passed, answers },
   });
 
+  // Auto-issue certificate on first pass
+  if (passed) {
+    await prisma.certificate.upsert({
+      where: { studentId_examId: { studentId, examId } },
+      create: { studentId, examId, examTitle: exam.title, roboticsLevel: exam.roboticsLevel, score, totalMarks: exam.totalMarks },
+      update: { score, totalMarks: exam.totalMarks, issuedAt: new Date() },
+    });
+  }
+
   res.json({ ...attempt, _id: attempt.id, score, totalMarks: exam.totalMarks, passed });
 });
 
