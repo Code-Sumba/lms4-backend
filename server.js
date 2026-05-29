@@ -6,6 +6,7 @@ import superadminRoutes from "./routes/superadmin.js";
 import adminRoutes      from "./routes/admin.js";
 import teacherRoutes    from "./routes/teacher.js";
 import studentRoutes    from "./routes/student.js";
+import contentRoutes    from "./routes/content.js";
 
 dotenv.config();
 
@@ -23,6 +24,7 @@ app.use("/api/superadmin", superadminRoutes);
 app.use("/api/admin",      adminRoutes);
 app.use("/api/teacher",    teacherRoutes);
 app.use("/api/student",    studentRoutes);
+app.use("/api/content",    contentRoutes);
 
 app.get("/api/health", (_, res) => res.json({ status: "ok", ts: new Date() }));
 

@@ -15,6 +15,12 @@ enum Role {
   student
 }
 
+enum ContentType {
+  book
+  video
+  worksheet
+}
+
 model Institute {
   id            String    @id @default(uuid())
   name          String
@@ -88,4 +94,15 @@ model StudentEnrollment {
   institute Institute @relation(fields: [instituteId], references: [id])
 
   @@unique([studentId, classId])
+}
+
+model Content {
+  id            String      @id @default(uuid())
+  title         String
+  description   String      @default("")
+  type          ContentType
+  url           String
+  roboticsLevel Int
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
 }
