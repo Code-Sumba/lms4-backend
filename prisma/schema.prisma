@@ -1,0 +1,91 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  superadmin
+  admin
+  teacher
+  student
+}
+
+model Institute {
+  id            String    @id @default(uuid())
+  name          String
+  code          String    @unique
+  address       String    @default("")
+  phone         String    @default("")
+  email         String    @default("")
+  allowedLevels Int[]
+  accessUntil   DateTime?
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  users       User[]
+  classes     Class[]
+  enrollments StudentEnrollment[]
+}
+
+model User {
+  id          String   @id @default(uuid())
+  fullName    String
+  email       String   @unique
+  password    String
+  role        Role
+  instituteId String?
+  phone       String   @default("")
+  rollNumber  String   @default("")
+  avatarColor String   @default("#6366f1")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  institute     Institute?          @relation(fields: [instituteId], references: [id])
+  classTeachers ClassTeacher[]
+  enrollments   StudentEnrollment[]
+}
+
+model Class {
+  id            String   @id @default(uuid())
+  name          String
+  roboticsLevel Int
+  instituteId   String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  institute   Institute          @relation(fields: [instituteId], references: [id])
+  teachers    ClassTeacher[]
+  enrollments StudentEnrollment[]
+}
+
+model ClassTeacher {
+  classId String
+  userId  String
+
+  class Class @relation(fields: [classId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([classId, userId])
+}
+
+model StudentEnrollment {
+  id          String   @id @default(uuid())
+  studentId   String
+  classId     String
+  instituteId String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  student   User      @relation(fields: [studentId], references: [id])
+  class     Class     @relation(fields: [classId], references: [id])
+  institute Institute @relation(fields: [instituteId], references: [id])
+
+  @@unique([studentId, classId])
+}

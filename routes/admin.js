@@ -1,180 +1,246 @@
 import express from "express";
-import User from "../models/User.js";
-import Class from "../models/Class.js";
-import StudentEnrollment from "../models/StudentEnrollment.js";
+import bcrypt from "bcryptjs";
+import prisma from "../lib/prisma.js";
 import { protect, allow } from "../middleware/auth.js";
 
 const router = express.Router();
 router.use(protect, allow("admin"));
 
-const instituteId = (req) => req.user.instituteId;
+const iid = (req) => req.user.instituteId;
+
+const fmtUser = ({ password, ...u }) => ({ ...u, _id: u.id });
+
+const fmtClass = (c) => ({
+  _id:          c.id,
+  id:           c.id,
+  name:         c.name,
+  roboticsLevel: c.roboticsLevel,
+  instituteId:  c.instituteId,
+  createdAt:    c.createdAt,
+  updatedAt:    c.updatedAt,
+  teacherIds:   (c.teachers || []).map((t) => ({ ...t.user, _id: t.user.id })),
+});
+
+const teacherInclude = {
+  teachers: {
+    include: {
+      user: {
+        select: { id: true, fullName: true, email: true, avatarColor: true },
+      },
+    },
+  },
+};
 
 /* ─── Stats ─── */
 router.get("/stats", async (req, res) => {
-  const iid = instituteId(req);
-  const [classes, teachers, students, exams] = await Promise.all([
-    Class.countDocuments({ instituteId: iid }),
-    User.countDocuments({ instituteId: iid, role: "teacher" }),
-    User.countDocuments({ instituteId: iid, role: "student" }),
-    Promise.resolve(0),
+  const [classes, teachers, students] = await Promise.all([
+    prisma.class.count({ where: { instituteId: iid(req) } }),
+    prisma.user.count({ where: { instituteId: iid(req), role: "teacher" } }),
+    prisma.user.count({ where: { instituteId: iid(req), role: "student" } }),
   ]);
-  res.json({ classes, teachers, students, exams });
+  res.json({ classes, teachers, students, exams: 0 });
 });
 
 /* ─── Classes ─── */
 router.get("/classes", async (req, res) => {
-  const classes = await Class.find({ instituteId: instituteId(req) })
-    .populate("teacherIds", "fullName email avatarColor")
-    .sort({ createdAt: -1 });
-  res.json(classes);
+  const classes = await prisma.class.findMany({
+    where: { instituteId: iid(req) },
+    include: teacherInclude,
+    orderBy: { createdAt: "desc" },
+  });
+  res.json(classes.map(fmtClass));
 });
 
 router.post("/classes", async (req, res) => {
   const { name, roboticsLevel } = req.body;
   if (!name || !roboticsLevel)
     return res.status(400).json({ message: "Name and roboticsLevel required." });
-  const cls = await Class.create({ name, roboticsLevel, instituteId: instituteId(req) });
-  res.status(201).json(cls);
+  const cls = await prisma.class.create({
+    data: { name, roboticsLevel: Number(roboticsLevel), instituteId: iid(req) },
+    include: teacherInclude,
+  });
+  res.status(201).json(fmtClass(cls));
 });
 
 router.put("/classes/:id", async (req, res) => {
   const { name, roboticsLevel } = req.body;
-  const cls = await Class.findOneAndUpdate(
-    { _id: req.params.id, instituteId: instituteId(req) },
-    { $set: { name, roboticsLevel } },
-    { new: true }
-  );
-  if (!cls) return res.status(404).json({ message: "Class not found." });
-  res.json(cls);
+  try {
+    const cls = await prisma.class.update({
+      where: { id: req.params.id, instituteId: iid(req) },
+      data: { name, roboticsLevel: Number(roboticsLevel) },
+      include: teacherInclude,
+    });
+    res.json(fmtClass(cls));
+  } catch {
+    res.status(404).json({ message: "Class not found." });
+  }
 });
 
 router.delete("/classes/:id", async (req, res) => {
-  await Class.findOneAndDelete({ _id: req.params.id, instituteId: instituteId(req) });
+  await prisma.class.deleteMany({ where: { id: req.params.id, instituteId: iid(req) } });
   res.json({ message: "Deleted." });
 });
 
 /* Assign / remove teacher from class */
 router.patch("/classes/:id/teachers", async (req, res) => {
-  const { teacherId, action } = req.body; // action: "add" | "remove"
-  const cls = await Class.findOne({ _id: req.params.id, instituteId: instituteId(req) });
+  const { teacherId, action } = req.body;
+  const cls = await prisma.class.findFirst({ where: { id: req.params.id, instituteId: iid(req) } });
   if (!cls) return res.status(404).json({ message: "Class not found." });
+
   if (action === "add") {
-    if (!cls.teacherIds.includes(teacherId)) cls.teacherIds.push(teacherId);
+    await prisma.classTeacher.upsert({
+      where: { classId_userId: { classId: req.params.id, userId: teacherId } },
+      create: { classId: req.params.id, userId: teacherId },
+      update: {},
+    });
   } else {
-    cls.teacherIds = cls.teacherIds.filter((id) => id.toString() !== teacherId);
+    await prisma.classTeacher.deleteMany({ where: { classId: req.params.id, userId: teacherId } });
   }
-  await cls.save();
-  res.json(cls);
+
+  const updated = await prisma.class.findUnique({ where: { id: req.params.id }, include: teacherInclude });
+  res.json(fmtClass(updated));
 });
 
 /* ─── Teachers ─── */
 router.get("/teachers", async (req, res) => {
-  const teachers = await User.find({ instituteId: instituteId(req), role: "teacher" })
-    .select("-password").sort({ createdAt: -1 });
-  res.json(teachers);
+  const teachers = await prisma.user.findMany({
+    where: { instituteId: iid(req), role: "teacher" },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true, fullName: true, email: true, role: true,
+      instituteId: true, phone: true, avatarColor: true,
+      isActive: true, createdAt: true, updatedAt: true,
+    },
+  });
+  res.json(teachers.map((u) => ({ ...u, _id: u.id })));
 });
 
 router.post("/teachers", async (req, res) => {
   const { fullName, email, password, phone, avatarColor } = req.body;
   if (!fullName || !email || !password)
     return res.status(400).json({ message: "fullName, email and password required." });
-  const exists = await User.findOne({ email: email.toLowerCase() });
+  const exists = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
   if (exists) return res.status(409).json({ message: "Email already registered." });
-  const user = await User.create({
-    fullName, email, password, phone,
-    role: "teacher",
-    instituteId: instituteId(req),
-    avatarColor: avatarColor || "#3b82f6",
+  const hashed = await bcrypt.hash(password, 12);
+  const user = await prisma.user.create({
+    data: {
+      fullName, email: email.toLowerCase(), password: hashed,
+      phone: phone || "", role: "teacher",
+      instituteId: iid(req), avatarColor: avatarColor || "#3b82f6",
+    },
   });
-  res.status(201).json({ ...user.toObject(), password: undefined });
+  res.status(201).json(fmtUser(user));
 });
 
 router.patch("/teachers/:id/toggle", async (req, res) => {
-  const user = await User.findOne({ _id: req.params.id, instituteId: instituteId(req), role: "teacher" });
+  const user = await prisma.user.findFirst({
+    where: { id: req.params.id, instituteId: iid(req), role: "teacher" },
+  });
   if (!user) return res.status(404).json({ message: "Teacher not found." });
-  user.isActive = !user.isActive;
-  await user.save();
-  res.json({ _id: user._id, isActive: user.isActive });
+  const updated = await prisma.user.update({
+    where: { id: req.params.id },
+    data: { isActive: !user.isActive },
+  });
+  res.json({ _id: updated.id, id: updated.id, isActive: updated.isActive });
 });
 
 router.patch("/teachers/:id/reset-password", async (req, res) => {
   const { password } = req.body;
   if (!password || password.length < 6)
     return res.status(400).json({ message: "Password must be at least 6 characters." });
-  const user = await User.findOne({ _id: req.params.id, instituteId: instituteId(req), role: "teacher" });
+  const user = await prisma.user.findFirst({
+    where: { id: req.params.id, instituteId: iid(req), role: "teacher" },
+  });
   if (!user) return res.status(404).json({ message: "Teacher not found." });
-  user.password = password;
-  await user.save();
+  const hashed = await bcrypt.hash(password, 12);
+  await prisma.user.update({ where: { id: req.params.id }, data: { password: hashed } });
   res.json({ message: "Password reset." });
 });
 
 router.delete("/teachers/:id", async (req, res) => {
-  await User.findOneAndDelete({ _id: req.params.id, instituteId: instituteId(req), role: "teacher" });
+  await prisma.user.deleteMany({ where: { id: req.params.id, instituteId: iid(req), role: "teacher" } });
   res.json({ message: "Deleted." });
 });
 
 /* ─── Students ─── */
 router.get("/students", async (req, res) => {
-  const students = await User.find({ instituteId: instituteId(req), role: "student" })
-    .select("-password").sort({ createdAt: -1 });
-  res.json(students);
+  const students = await prisma.user.findMany({
+    where: { instituteId: iid(req), role: "student" },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true, fullName: true, email: true, role: true,
+      instituteId: true, phone: true, rollNumber: true,
+      avatarColor: true, isActive: true, createdAt: true, updatedAt: true,
+    },
+  });
+  res.json(students.map((u) => ({ ...u, _id: u.id })));
 });
 
 router.post("/students", async (req, res) => {
   const { fullName, email, password, phone, rollNumber, avatarColor } = req.body;
   if (!fullName || !email || !password)
     return res.status(400).json({ message: "fullName, email and password required." });
-  const exists = await User.findOne({ email: email.toLowerCase() });
+  const exists = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
   if (exists) return res.status(409).json({ message: "Email already registered." });
-  const user = await User.create({
-    fullName, email, password, phone, rollNumber,
-    role: "student",
-    instituteId: instituteId(req),
-    avatarColor: avatarColor || "#16a34a",
+  const hashed = await bcrypt.hash(password, 12);
+  const user = await prisma.user.create({
+    data: {
+      fullName, email: email.toLowerCase(), password: hashed,
+      phone: phone || "", rollNumber: rollNumber || "",
+      role: "student", instituteId: iid(req),
+      avatarColor: avatarColor || "#16a34a",
+    },
   });
-  res.status(201).json({ ...user.toObject(), password: undefined });
+  res.status(201).json(fmtUser(user));
 });
 
 router.patch("/students/:id/toggle", async (req, res) => {
-  const user = await User.findOne({ _id: req.params.id, instituteId: instituteId(req), role: "student" });
+  const user = await prisma.user.findFirst({
+    where: { id: req.params.id, instituteId: iid(req), role: "student" },
+  });
   if (!user) return res.status(404).json({ message: "Student not found." });
-  user.isActive = !user.isActive;
-  await user.save();
-  res.json({ _id: user._id, isActive: user.isActive });
+  const updated = await prisma.user.update({
+    where: { id: req.params.id },
+    data: { isActive: !user.isActive },
+  });
+  res.json({ _id: updated.id, id: updated.id, isActive: updated.isActive });
 });
 
 router.patch("/students/:id/reset-password", async (req, res) => {
   const { password } = req.body;
   if (!password || password.length < 6)
     return res.status(400).json({ message: "Password must be at least 6 characters." });
-  const user = await User.findOne({ _id: req.params.id, instituteId: instituteId(req), role: "student" });
+  const user = await prisma.user.findFirst({
+    where: { id: req.params.id, instituteId: iid(req), role: "student" },
+  });
   if (!user) return res.status(404).json({ message: "Student not found." });
-  user.password = password;
-  await user.save();
+  const hashed = await bcrypt.hash(password, 12);
+  await prisma.user.update({ where: { id: req.params.id }, data: { password: hashed } });
   res.json({ message: "Password reset." });
 });
 
 router.delete("/students/:id", async (req, res) => {
-  await User.findOneAndDelete({ _id: req.params.id, instituteId: instituteId(req), role: "student" });
+  await prisma.user.deleteMany({ where: { id: req.params.id, instituteId: iid(req), role: "student" } });
   res.json({ message: "Deleted." });
 });
 
-/* Enroll student in a class */
+/* Enroll / unenroll student */
 router.post("/students/:id/enroll", async (req, res) => {
   const { classId } = req.body;
-  const iid = instituteId(req);
-  const cls = await Class.findOne({ _id: classId, instituteId: iid });
+  const cls = await prisma.class.findFirst({ where: { id: classId, instituteId: iid(req) } });
   if (!cls) return res.status(404).json({ message: "Class not found." });
-  await StudentEnrollment.findOneAndUpdate(
-    { studentId: req.params.id, classId },
-    { studentId: req.params.id, classId, instituteId: iid },
-    { upsert: true, new: true }
-  );
+  await prisma.studentEnrollment.upsert({
+    where: { studentId_classId: { studentId: req.params.id, classId } },
+    create: { studentId: req.params.id, classId, instituteId: iid(req) },
+    update: {},
+  });
   res.json({ message: "Enrolled." });
 });
 
 router.delete("/students/:id/enroll/:classId", async (req, res) => {
-  await StudentEnrollment.findOneAndDelete({ studentId: req.params.id, classId: req.params.classId });
+  await prisma.studentEnrollment.deleteMany({
+    where: { studentId: req.params.id, classId: req.params.classId },
+  });
   res.json({ message: "Removed." });
 });
 

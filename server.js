@@ -1,5 +1,4 @@
 import express from "express";
-import mongoose from "mongoose";
 import cors from "cors";
 import dotenv from "dotenv";
 import authRoutes       from "./routes/auth.js";
@@ -33,11 +32,5 @@ app.use((err, req, res, next) => {
   res.status(err.status || 500).json({ message: err.message || "Internal server error" });
 });
 
-/* Start — listen first so Railway healthcheck passes, then connect DB */
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`✓ Server on port ${PORT}`));
-
-mongoose
-  .connect(process.env.MONGO_URI)
-  .then(() => console.log("✓ MongoDB connected"))
-  .catch((err) => { console.error("DB connection failed:", err.message); process.exit(1); });

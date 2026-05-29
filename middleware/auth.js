@@ -1,5 +1,5 @@
 import jwt from "jsonwebtoken";
-import User from "../models/User.js";
+import prisma from "../lib/prisma.js";
 
 export const protect = async (req, res, next) => {
   const token = req.headers.authorization?.startsWith("Bearer ")
@@ -10,9 +10,17 @@ export const protect = async (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = await User.findById(decoded.id).select("-password");
-    if (!req.user || !req.user.isActive)
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.id },
+      select: {
+        id: true, fullName: true, email: true, role: true,
+        instituteId: true, phone: true, rollNumber: true,
+        avatarColor: true, isActive: true, createdAt: true, updatedAt: true,
+      },
+    });
+    if (!user || !user.isActive)
       return res.status(401).json({ message: "User not found or inactive" });
+    req.user = { ...user, _id: user.id };
     next();
   } catch {
     res.status(401).json({ message: "Invalid or expired token" });
